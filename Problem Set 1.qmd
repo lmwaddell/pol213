@@ -1,0 +1,12 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+I'm working on my homework . 
+
+```{r}
+
+```
+
