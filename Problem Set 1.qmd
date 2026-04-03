@@ -110,4 +110,4 @@ ggplot(mean_elections, aes(x = mean_income , y = mean_dem)) +
 
 ## Question 4
 
-
+See if this shows up 
