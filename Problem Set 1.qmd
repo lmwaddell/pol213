@@ -4,9 +4,110 @@ format: html
 editor: visual
 ---
 
-I'm working on my homework . 
+I'm working on my homework .
+
+```{r}
+# Loading libraries 
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(broom)
+library(modelsummary)
+library(juanr)
+install.packages("readxl") # CRAN version
+library(readxl)
+
+```
+
+```{r}
+# Preparring data 
+
+small_elections = elections %>% 
+  mutate(
+    per_dem_2020 = per_dem_2020 * 100,
+    income_10k = hh_income / 10000
+  ) %>% 
+  select(name, state, per_dem_2020, income_10k,
+         white_pct = white, black_pct = black)
+```
+
+## Question 1
+
+The Environmental Protection Agency houses the Landfill Methane Outreach Program (LMOP). The LMOP has a database which contains information such as the physical address, latitude and longitude, owner/operator organization, operational status, year opened, actual or expected closure year, design capacity, amount of waste in place, gas collection system status and landfill gas (LFG) collected amount for 2,641 (observations) municipal solid waste landfills.
+
+```{r}
+# Read Excel file 
+
+Landfills = read_xlsx("landfilllmopdata.xlsx", sheet = 2)
+ 
+Landfills 
+  
+```
+
+Wells at landfills are used to manage environmental impacts by capturing hazardous landfill gas like methane and carbon dioxide and monitoring groundwater. It would rational to believe that landfills with the highest quantities of waste should have more wells in place to prevent the seepage of harmful substances into groundwater. 
+
+I predict that higher tons of waste held (X) will result in more wells being placed (Y). I will control for whether the landfill is currently open or closed (Z). Regardless of its current operations, we should be able to see how frequent safeguards against environmental degradation were put into place. 
 
 ```{r}
 
+new_landfills = Landfills %>% select("Landfill Name" , 
+                                     "State" , 
+                                     "Waste in Place (tons)" ,
+                                     "Current Landfill Status" ,
+                                     "Number of Wells")
+
+
+new_landfills$`Current Landfill Status` = 
+  ifelse(new_landfills$`Current Landfill Status` == "Open", 1, 0)
+
+
 ```
+
+```{r}
+land_mod = lm(
+  Number of Wells ~ Waste in Place (tons) + Current Landfill Status, 
+data = new_landfills)
+
+```
+
+## Question 2 
+
+## Question 3 
+
+```{r}
+
+# Create income Deciles 
+
+small_elections = small_elections %>% 
+  mutate(income_decile = ntile(income_10k, 10)
+  )
+
+# Find means 
+mean_elections = small_elections %>% 
+  group_by(income_decile) %>% 
+  summarise(mean_dem = mean(per_dem_2020 , na.rm = TRUE), 
+            mean_income = mean(income_10k, na.rm = TRUE))
+
+ggplot(mean_elections, aes(x = mean_income , y = mean_dem)) +
+       geom_point() +
+        labs(
+          x = "Mean Income" ,
+          y = "Mean Democratic Percentage Points"
+        )
+```
+```{r}
+# Overlay regression line 
+
+dem_mod = lm(per_dem_2020 ~ income_10k , data = small_elections)
+
+ggplot(mean_elections, aes(x = mean_income , y = mean_dem)) +
+       geom_smooth(method = lm) +
+       geom_point(aes(color = income_decile)) +
+        labs(x = "Mean Income" ,
+             y = "Mean Democratic Percentage Points") +
+  theme_minimal()
+```
+
+## Question 4
+
 
