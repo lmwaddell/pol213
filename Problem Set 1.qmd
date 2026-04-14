@@ -1,11 +1,14 @@
 ---
-title: "Problem Set 1"
-format: html
-editor: visual
+title: "Problem Set #1"
+format:
+  html:
+    embed-resources: true
 ---
 
 ```{r}
-# Loading libraries 
+#| label: setup
+#| message: false
+# Loading libraries
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
@@ -13,11 +16,12 @@ library(broom)
 library(modelsummary)
 library(juanr)
 library(readxl)
+library(janitor)
 
 ```
 
 ```{r}
-# Preparring data 
+# Preparing data 
 
 small_elections = elections %>% 
   mutate(
