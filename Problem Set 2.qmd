@@ -1,0 +1,539 @@
+---
+title: "Problem Set #2"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r}
+#| label: setup
+#| message: false
+# Loading libraries
+library(tidyverse)
+library(broom)
+library(modelsummary)
+library(marginaleffects)
+library(gapminder)
+library(juanr)
+library(stargazer)
+
+```
+
+## Question 1
+
+```{r 1.a}
+
+# Make year a factor 
+
+view(childcare)
+help(childcare)
+childcare = childcare %>% 
+  mutate(year = factor(year, levels = 
+                         c ("2008", "2009", "2010", "2011", "2012", 
+                            "2013", "2014", "2015", "2016", "2017", "2018"))
+  )
+
+child_mod = lm(infant_price ~ poverty_rate + year + state, data = childcare)
+modelsummary(child_mod,
+  title = "Outcome: Cost of Childcare",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "poverty_rate" = "Poverty Rate",
+    "year"  = "Year",
+    "state"   = "State"
+  ))
+
+coef(child_mod)["poverty_rate"]
+
+```
+
+When holding for the year and state, when all else is the same, one increase increase in the rate of poverty for a county brings the cost of childcare down by about $1.67.
+
+Using the fitted model, I will select the year 2012 in North Carolina while varying the poverty rate to see how this relationship holds.
+
+```{r 1.b}
+
+scenario = crossing(
+  poverty_rate = seq(
+    min(childcare$poverty_rate, na.rm = TRUE),
+    max(childcare$poverty_rate, na.rm = TRUE)),
+  
+  state = "North Carolina", 
+  year = "2012"
+  )
+  
+  
+preds = augment(child_mod, newdata = scenario, se_fit = TRUE,
+                interval = "confidence")
+preds
+
+
+# Visualize the marginal effect of income
+
+ggplot(preds, aes(x = poverty_rate, y = .fitted)) +
+  geom_point(size = 0.5) +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), width = 0.2 , alpha = 0.5) +
+  geom_line(linewidth = 1) +
+  geom_rug(data = childcare, aes(x = poverty_rate),
+           inherit.aes = FALSE, alpha = 0.3, sides = "b") +
+  labs(
+    x = "Poverty Rate",
+    y = "Predicted Infant Price"
+  )
+```
+
+Our plot corroborates what is found in our model estimate. As the rate in poverty increases by state county, the predicted infant price goes down.
+
+```{r 1.c}
+
+quad_child = lm(infant_price ~ poverty_rate + poverty_rate2 + year + state, 
+                data = mutate(childcare, poverty_rate2 = poverty_rate^2))
+
+modelsummary(quad_child,
+  title = "Outcome: Cost of Childcare",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "poverty_rate" = "Poverty Rate",
+    "poverty_rate2" = "Poverty Rate^2",
+    "year"  = "Year",
+    "state"   = "State"
+  ))
+
+coef(quad_child)["poverty_rate2"]
+
+
+
+```
+
+Within this model the effect of poverty rate on infant price depends on the current level of poverty. Poverty rate is no longer constant, so given the negative effect of poverty, as the poverty rate increases, childcare costs are projected to go down $5.22 until some point when poverty increases. After that point, the effect becomes less negative. 
+
+```{r }
+
+scenario = crossing(
+  poverty_rate = seq(
+    min(childcare$poverty_rate, na.rm = TRUE),
+    max(childcare$poverty_rate, na.rm = TRUE),
+    length.out = 100
+  ),
+  state = "North Carolina",
+  year = "2012") %>% 
+  mutate(poverty_rate2 = poverty_rate^2)
+  
+  
+preds2 = augment(quad_child, newdata = scenario, se_fit = TRUE,
+                interval = "confidence")
+preds2
+
+
+# Visualize the marginal effect of income
+
+ggplot(preds2, aes(x = poverty_rate, y = .fitted)) +
+  geom_point(size = 0.5) +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), width = 0.2 , alpha = 0.5) +
+  geom_line(linewidth = 1) +
+  geom_rug(data = childcare, aes(x = poverty_rate),
+           inherit.aes = FALSE, alpha = 0.3, sides = "b") +
+  labs(
+    x = "Poverty Rate",
+    y = "Predicted Infant Price"
+  )
+
+```
+This U-turn around might have something to do with how each state policy allocates funding for childcare in proportion to their constituents' earnings.
+
+
+My new model is: infant price =
+
+$\beta _{0} + \beta _{1} * povertyrate + \beta_{2} * poverty rate^{2}$
+
+Marginal effects = 
+
+$\frac{\partial infant price}{\partial poverty rate} = -5.223 * 2(0.108)$
+
+```{r 1.e}
+
+pov_seq = seq(
+  min(childcare$poverty_rate, na.rm = TRUE),
+  max(childcare$poverty_rate, na.rm = TRUE),
+  length.out = 100
+)
+
+# Extracting the coefficients
+
+b1 = coef(quad_child)["poverty_rate"]
+b2 = coef(quad_child)["poverty_rate2"]
+
+# Use sequencing from min to max
+
+marginal_effect = b1 + 2 * b2 * pov_seq
+
+```
+
+```{r 1.f}
+
+effects_data = data.frame(
+  poverty_rate = pov_seq,
+  marginal_effect = marginal_effect
+)
+
+ggplot(effects_data, aes(x = poverty_rate, y = marginal_effect)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    x = "Poverty Rate",
+    y = "Marginal Effect on Infant Price",
+    title = "Marginal Effect of Poverty on Childcare Costs"
+  ) +
+  theme_minimal()
+
+```
+When the rate of poverty is low, the effect on infant price is a negative one, suggesting that there are areas who pay less for childcare given their rate of poverty. However, as the rate of poverty increases, that effect becomes less strong and then turns positive. Perhaps, these counties have to pay a price that is disproportionate to their earnings and their local legislation has yet to account for it. 
+
+## Question 2 
+
+```{r 2.a}
+
+view(therm)
+therm = therm %>% 
+  mutate(Republican = if_else(party_id %in% c("Republican"), 1, 0)) %>% 
+  mutate(education = case_when(
+    educ == "No HS" ~ 0,
+    educ == "High school graduate" ~ 1, 
+    educ == "Some college" ~ 2, 
+    educ == "2-year" ~ 3,
+    educ == "4-year" ~ 4,
+    educ == "Post-grad" ~ 5
+  ))
+
+therm_mod = lm(ft_immig ~ Republican + education, data = therm)
+modelsummary(therm_mod,
+  title = "Outcome: Feelings towards Immigrants",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "Republican" = "Republican",
+    "education"  = "Education"
+  ))
+
+coef(therm_mod)["Republican"]
+
+```
+When holding for education level, given that all else is the same, a respondent being a republican decreases their warm feelings towards immigrants by about 15.6 on the thermometer scale. 
+
+What happens if we add an interaction between education and republican? Surely education attainment is distributed a certain way across partisan lines. 
+
+```{r 2.b}
+
+# Interaction between republican and education
+
+therm_mod2 = lm(ft_immig ~ Republican + education + Republican:education, data = therm)
+modelsummary(therm_mod,
+  title = "Outcome: Feelings towards Immigrants",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "Republican" = "Republican",
+    "education"  = "Education", 
+    "Republican:education" = "Republican x Education"
+  ))
+
+coef(therm_mod2)["Republican:education"]
+
+
+```
+
+Marginal effects formula = 
+
+$\frac{\partial\hat{Y}}{\partial republican} = \beta_{1} + \beta_{3} * education$
+
+This means that the effect of being a republican towards your feelings on immigrants now depends on education. Since our coefficient is negative, a higher education should make the effect more negative. 
+
+
+```{r 2.d}
+
+b1 = coef(therm_mod2)["Republican"]
+b3 = coef(therm_mod2)["Republican:education"]
+
+educ_vals = 1:8
+marginal_effects = b1 + b3 * educ_vals
+
+data.frame(educ = educ_vals, ME = marginal_effects)
+
+
+```
+
+```{r 2.e}
+
+library(marginaleffects)
+
+slopes = slopes(
+  therm_mod2,
+  variables = "Republican",
+  newdata = datagrid(educ_num = 1:8)
+)
+
+plot_slopes(
+  therm_mod2,
+  variables = "Republican",
+  condition = "education"
+)
+
+```
+
+From our marginal effects results and slopes plot, as education increases, Republicans feel  colder toward immigrants. 
+
+## Question 3 
+
+```{r 3.a}
+view(bonica)
+help(bonica)
+# Filter out missing values
+bonica = bonica %>% 
+  filter(
+    !is.na(num_distinct_donors),
+    !is.na(total_receipts),
+    num_distinct_donors != 0,
+    total_receipts != 0
+  )
+
+```
+
+Within a constant linear model, more unique donors should more than likely yield a positive effect on the amount of fundraising. However, if donors pledge or give a very high amount, it may limit the level of giving that other donors contribute if they are aware that congressional candidates are receiving larger donations. It would make sense to log the number of donors given that each donation may matter a little less than the last given the magnitude of the donation. 
+
+```{r 3.b}
+
+log_mod = lm(total_receipts ~ log(num_distinct_donors) + cycle + party, 
+             data = bonica)
+
+modelsummary(log_mod,
+  title = "Outcome: Number of donors on total receipts ",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "log(num_distinct_donors)" = "log(Number of Donors)",
+    "cycle"  = "Election Year", 
+    "party" = "Party"
+  ))
+
+
+```
+
+```{r 3.c}
+
+scenario2 = crossing(
+  num_distinct_donors = seq(
+    min(bonica$num_distinct_donors, na.rm = TRUE),
+    max(bonica$num_distinct_donors, na.rm = TRUE),
+    length.out = 100
+  ),
+  cycle = median(bonica$cycle),
+  party = "R"
+)
+  
+  
+preds3 = augment(log_mod, newdata = scenario2, se_fit = TRUE,
+                interval = "confidence")
+preds3
+
+
+# Visualize the marginal effect of income
+
+ggplot(preds3, aes(x = num_distinct_donors, y = .fitted)) +
+  geom_point(size = 0.5) +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), width = 0.2 , alpha = 0.5) +
+  geom_line(linewidth = 1) +
+  geom_rug(data = bonica, aes(x = num_distinct_donors),
+           inherit.aes = FALSE, alpha = 0.3, sides = "b") +
+  labs(
+    x = "Number of Donors",
+    y = "Total Receipts"
+  )
+
+
+```
+There is some sort of growth rate for the amount of donors a candidate may have and the total dollars raised. The growth surges for only a few amount of donors until it plateaus. This may corroborate the theory that when constituents are aware of the amount of support a candidate has, the amount the give drops off.  
+
+
+## Question 4
+
+I will use the landfill dataset from the last problem set and analyze the same X-Y relationship between the amount of wells (Y) and the waste in place (X). I will control again for current status of the landfills.
+
+```{r 4.a}
+library(readxl)
+
+Landfills = read_xlsx("landfilllmopdata.xlsx", sheet = 2) %>% 
+  janitor::clean_names() %>% 
+  tidyr::drop_na()
+
+Landfills 
+
+new_landfills = Landfills %>% select(landfill_name , 
+                                     state , 
+                                     waste_in_place_tons ,
+                                     current_landfill_status ,
+                                     number_of_wells) %>% 
+  mutate(waste_in_place_thousand_tons = waste_in_place_tons/1000)
+
+
+new_landfills$current_landfill_status = 
+  ifelse(new_landfills$current_landfill_status == "Open", 1, 0)
+
+
+```
+
+
+```{r 4.b}
+
+set.seed(123)
+
+sample1 = new_landfills %>% slice_sample(n = 50)
+sample2 = new_landfills %>% slice_sample(n = 50)
+
+```
+
+
+```{r 4.c}
+
+# Sample 1
+m1_s1 = lm(number_of_wells ~ 
+             waste_in_place_thousand_tons + current_landfill_status, data = sample1)
+
+m2_s1 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 2) + current_landfill_status, data = sample1)
+
+m3_s1 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 3) + current_landfill_status, data = sample1)
+
+m4_s1 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 4) + current_landfill_status, data = sample1)
+
+# Sample 2
+m1_s2 = lm(number_of_wells ~ 
+             waste_in_place_thousand_tons + current_landfill_status, data = sample2)
+
+m2_s2 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 2) + current_landfill_status, data = sample2)
+
+m3_s2 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 3) + current_landfill_status, data = sample2)
+
+m4_s2 = lm(number_of_wells ~ 
+             poly(waste_in_place_thousand_tons, 4) + current_landfill_status, data = sample2)
+
+```
+
+```{r 4.d}
+
+waste_grid = data.frame(
+  waste_in_place_thousand_tons = seq(min(new_landfills$waste_in_place_thousand_tons),
+              max(new_landfills$waste_in_place_thousand_tons), length.out = 100),
+  current_landfill_status = mean(new_landfills$current_landfill_status) 
+)
+
+waste_grid$lin_s1  = predict(m1_s1, newdata = waste_grid)
+waste_grid$quad_s1 = predict(m2_s1, newdata = waste_grid)
+waste_grid$cub_s1  = predict(m3_s1, newdata = waste_grid)
+waste_grid$quart_s1 = predict(m4_s1, newdata = waste_grid)
+
+waste_grid$lin_s2 = predict(m1_s2, newdata = waste_grid)
+waste_grid$quad_s2 = predict(m2_s2, newdata = waste_grid)
+waste_grid$cub_s2 = predict(m3_s2, newdata = waste_grid)
+waste_grid$quart_s2 = predict(m4_s2, newdata = waste_grid)
+
+waste_plot = waste_grid %>%
+  pivot_longer(cols = -c(waste_in_place_thousand_tons, current_landfill_status),
+               names_to = "model",
+               values_to = "pred") %>%
+  mutate(sample = ifelse(grepl("s1", model), "Sample 1", "Sample 2"),
+         model = gsub("_s[12]", "", model))
+
+ggplot(waste_plot, aes(x = waste_in_place_thousand_tons, y = pred, color = model)) +
+  geom_line() +
+  facet_wrap(~ sample) +
+  labs(x = "Waste in Place (Thousands of tons)" , y = "Predicted wells")
+
+
+```
+The linear model seems to show a consistent, similar story across both samples. This tracks as that model is forced to fit well with the limited amount of samples. As we increase in degrees, there is more of a curvature like in the quadratic model; however there is still a general consistency across models. Quite frankly, both samples display very similar stories across models, with more dips and curves appearing in the quadratic and quart models. The relationship between waste in place and amount of wells appears to be positive consistently when pulling from different samples. 
+
+## Question 5
+
+The goal with running a simulation, when repeating it 500 times, is to generate fake data from the DGP, run a regression and store the coefficients. 
+
+```{r 5.a}
+set.seed(1234) #So that the results are easy to replicate 
+
+simulations = data.frame(run = 1:500 ,
+                         beta_x = NA,
+                         p_x = NA,
+                         beta_int = NA,
+                         p_int = NA
+) # Creating a table to store coefficients, p-values, and interaction beta and p
+
+
+for (i in 1:500) {
+  
+  N = 150
+  
+  # Generating data
+  x = rnorm(N, 0, 1) # Continuous variable 
+  z = rbinom(N, 1, 0.5) # Binary variable 
+  epsilon = rnorm(N, 0, 5) # Noise?
+  
+  y = 10 + 3 * x + 2 * z + 1.5 * (x * z) + epsilon
+  
+  # Running regression
+  model = lm(y ~ x * z)
+  
+  # Extract results
+  coefs = summary(model)$coefficients
+  
+  simulations$beta_x[i] = coefs["x", "Estimate"]
+  simulations$p_x[i] = coefs["x", "Pr(>|t|)"]
+  
+  simulations$beta_int[i] = coefs["x:z", "Estimate"]
+  simulations$p_int[i] = coefs["x:z", "Pr(>|t|)"]
+}
+
+
+```
+
+```{r 5.b} 
+
+simulation_plot = simulations %>%
+  mutate(sig_x = p_x < 0.05, #Reshaping significance for plot 
+         sig_int = p_int < 0.05) %>%
+  pivot_longer(
+    cols = c(beta_x, beta_int),
+    names_to = "term",
+    values_to = "estimate"
+  ) %>%
+  mutate(sig = ifelse(term == "beta_x", sig_x, sig_int),
+         true_value = ifelse(term == "beta_x", 3, 1.5))
+
+ggplot(simulation_plot, aes(x = run, y = estimate, color = sig)) +
+  geom_point() +
+  facet_wrap(~ term, scales = "free_y") +
+  geom_hline(aes(yintercept = true_value), linetype = "dashed") +
+  labs(color = "p < 0.05")
+
+
+```
+Each dot displays one out of the 500 simulations and their proximity to the true value. The color shows whether or not they are statistically significant, which we can see is more prominent in the interaction plot. 
+
+```{r 5.c}
+
+mean(simulations$p_x < 0.05)
+mean(simulations$p_int < 0.05)
+```
+
+However, as we see here the main effect has a higher detection rate than the interaction effect. Even though both effects are present in the DGP and within our visualization, the interaction has a larger standard error. This demonstrates that current studies are  under-powered to detect interaction effects. A larger sample size may be able to counteract this. 
+
+
