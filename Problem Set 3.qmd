@@ -1,0 +1,78 @@
+---
+title: "Problem Set #3"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(broom)
+library(modelsummary)
+library(estimatr)
+library(marginaleffects)
+library(readxl)
+library(juanr)
+```
+
+
+## Question 1
+
+The North Carolina Rural Health Research Program maintains a list of rural hospital closures in the US since 2005. 
+
+Independent variable: Complete Closure vs Converted Closure 
+Dependent Variable: Rural-Urban Commuting Area classification
+
+I hypothesize that the level of rural-ness in regards to hospital location correlates to whether or not the hospital was completely closed or converted. 
+
+```{r}
+
+# Load data 
+
+waste = read_csv("data/2024_us.csv") %>% 
+  janitor::clean_names()
+
+new_waste = waste %>% 
+  select(x4_facility_name,
+         x8_st, 
+         x53_5_3_water,
+         x65_on_site_release_total, 
+         x106_6_2_total_transfer) %>% 
+  
+   mutate(South = if_else(x8_st %in% c("AL", "AR", "FL", "GA", "KY" ,"LA", "MS",
+         "NC", "SC", "TN", "TX", "VA"), 1, 0)) %>%
+    filter(!is.na(x53_5_3_water), 
+           !is.na(x65_on_site_release_total),
+           !is.na(x106_6_2_total_transfer))
+new_waste
+
+```
+
+
+## Question 2 
+
+```{r}
+
+rebel_leader = rebel_leader %>% 
+  filter(
+    !is.na(dead) ,
+    !is.na(death_cause),
+    !is.na(birth_year), 
+    !is.na(western), 
+    !is.na(train_abroad))
+
+
+
+```
+
+
+
+# Question 3 
+
+```{r}
+
+affairs_clean = affairs |>
+  mutate(had_affair = as.numeric(n_affairs > 0)) |>
+  select(had_affair, kids, years_married)
+
+```
+

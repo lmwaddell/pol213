@@ -1,0 +1,195 @@
+
+Regression Table: Cost of Childcare
+=====================================================
+                              Dependent variable:    
+                          ---------------------------
+                                 infant_price        
+-----------------------------------------------------
+poverty_rate                        -1.7***          
+                                    (0.04)           
+                                                     
+year2009                             2.6**           
+                                     (1.0)           
+                                                     
+year2010                            5.9***           
+                                     (1.0)           
+                                                     
+year2011                            10.1***          
+                                     (1.0)           
+                                                     
+year2012                            14.5***          
+                                     (1.0)           
+                                                     
+year2013                            19.9***          
+                                     (1.0)           
+                                                     
+year2014                            23.3***          
+                                     (1.0)           
+                                                     
+year2015                            25.2***          
+                                     (1.0)           
+                                                     
+year2016                            26.7***          
+                                     (1.0)           
+                                                     
+year2017                            30.0***          
+                                     (1.0)           
+                                                     
+year2018                            32.9***          
+                                     (1.0)           
+                                                     
+stateAlaska                        104.5***          
+                                     (5.1)           
+                                                     
+stateArizona                        56.7***          
+                                     (2.5)           
+                                                     
+stateArkansas                      -12.0***          
+                                     (1.9)           
+                                                     
+stateCalifornia                    156.1***          
+                                     (1.6)           
+                                                     
+stateColorado                      101.4***          
+                                     (3.9)           
+                                                     
+stateConnecticut                   130.4***          
+                                     (3.3)           
+                                                     
+stateDelaware                       56.5***          
+                                     (5.2)           
+                                                     
+stateDistrict of Columbia          197.3***          
+                                    (29.4)           
+                                                     
+stateFlorida                        33.7***          
+                                     (1.6)           
+                                                     
+stateGeorgia                         -3.3            
+                                     (2.6)           
+                                                     
+stateHawaii                        158.3***          
+                                    (10.4)           
+                                                     
+stateIdaho                          -4.1**           
+                                     (2.0)           
+                                                     
+stateIllinois                       57.0***          
+                                     (1.4)           
+                                                     
+stateIowa                           22.0***          
+                                     (3.2)           
+                                                     
+stateKansas                        -16.3***          
+                                     (1.4)           
+                                                     
+stateKentucky                       6.6***           
+                                     (1.3)           
+                                                     
+stateLouisiana                      9.4***           
+                                     (1.6)           
+                                                     
+stateMaine                          49.8***          
+                                     (3.0)           
+                                                     
+stateMaryland                       92.7***          
+                                     (2.7)           
+                                                     
+stateMassachusetts                 181.9***          
+                                     (2.6)           
+                                                     
+stateMichigan                       30.2***          
+                                     (1.5)           
+                                                     
+stateMinnesota                      60.4***          
+                                     (1.5)           
+                                                     
+stateMississippi                   -24.2***          
+                                     (1.5)           
+                                                     
+stateMissouri                       10.4**           
+                                     (4.7)           
+                                                     
+stateMontana                        17.6***          
+                                     (4.1)           
+                                                     
+stateNebraska                         3.1            
+                                     (2.1)           
+                                                     
+stateNevada                         36.8***          
+                                     (2.7)           
+                                                     
+stateNew Hampshire                  77.5***          
+                                     (9.4)           
+                                                     
+stateNew Jersey                     87.1***          
+                                     (2.2)           
+                                                     
+stateNew York                      116.5***          
+                                     (3.9)           
+                                                     
+stateNorth Carolina                 43.0***          
+                                     (1.7)           
+                                                     
+stateNorth Dakota                   10.6***          
+                                     (1.7)           
+                                                     
+stateOhio                           55.0***          
+                                     (1.5)           
+                                                     
+stateOklahoma                       24.6***          
+                                     (1.5)           
+                                                     
+stateOregon                         44.0***          
+                                     (1.8)           
+                                                     
+statePennsylvania                   49.2***          
+                                     (1.6)           
+                                                     
+stateRhode Island                  127.2***          
+                                    (13.2)           
+                                                     
+stateSouth Carolina                 7.1***           
+                                     (2.2)           
+                                                     
+stateSouth Dakota                  -17.7***          
+                                     (1.6)           
+                                                     
+stateTennessee                      11.8***          
+                                     (1.4)           
+                                                     
+stateTexas                          9.7***           
+                                     (1.2)           
+                                                     
+stateUtah                           22.4***          
+                                     (2.0)           
+                                                     
+stateVermont                        64.6***          
+                                     (2.6)           
+                                                     
+stateVirginia                       46.8***          
+                                     (1.4)           
+                                                     
+stateWashington                    152.9***          
+                                     (1.8)           
+                                                     
+stateWest Virginia                  12.0***          
+                                     (1.6)           
+                                                     
+stateWisconsin                      60.1***          
+                                     (1.5)           
+                                                     
+stateWyoming                        19.4***          
+                                     (3.0)           
+                                                     
+Constant                           115.5***          
+                                     (1.5)           
+                                                     
+-----------------------------------------------------
+Observations                        23,593           
+R2                                    0.7            
+Adjusted R2                           0.7            
+Residual Std. Error            29.4 (df = 23533)     
+F Statistic                939.4*** (df = 59; 23533) 
+=====================================================
+Note:                     *p<0.1; **p<0.05; ***p<0.01
