@@ -1,7 +1,6 @@
 ---
 title: "Problem Set #3"
 format: html
-editor: visual
 ---
 
 ```{r}
@@ -14,17 +13,14 @@ library(readxl)
 library(juanr)
 ```
 
-
 ## Question 1
 
-The North Carolina Rural Health Research Program maintains a list of rural hospital closures in the US since 2005. 
+The EPA's Toxic Release Inventory (TRI) Program reports on the waste management of certain toxic chemicals that pose a threat to human health and the environment. There are 77,295 observations of industrial facilities that share their reports on the quantities of toxic chemicals released into the environment on site, the quantities transferred off site to other facilities and summary data concerning releases. 
 
-Independent variable: Complete Closure vs Converted Closure 
-Dependent Variable: Rural-Urban Commuting Area classification
+For this assignment, I will see if there is an effect of chemical releases within surface water (Y) on facilities in the South versus not in the South (x). Are there more occurrences one way or another? 
 
-I hypothesize that the level of rural-ness in regards to hospital location correlates to whether or not the hospital was completely closed or converted. 
-
-```{r}
+Facilities transfer chemical waste to Publicly owned treatment works (POTW) in an attempt to counteract emissions and seepage rates. It is unclear by the data whether this process takes place before or after contamination within the environment. Given that there is still a substantial amount of chemicals that run off into surrounding communities even with transfer, we will control for this to pay attention to those rates. 
+```{r 1.b}
 
 # Load data 
 
@@ -40,39 +36,337 @@ new_waste = waste %>%
   
    mutate(South = if_else(x8_st %in% c("AL", "AR", "FL", "GA", "KY" ,"LA", "MS",
          "NC", "SC", "TN", "TX", "VA"), 1, 0)) %>%
-    filter(!is.na(x53_5_3_water), 
-           !is.na(x65_on_site_release_total),
-           !is.na(x106_6_2_total_transfer))
+  mutate(water = if_else(x53_5_3_water > 0, 1, 0)) %>% 
+  mutate(total_thousand_pounds = x65_on_site_release_total/1000) %>% 
+  mutate(transfer_thousand_pounds = x106_6_2_total_transfer/1000) %>% 
+    drop_na()
+
 new_waste
 
 ```
+Many cases of environmental justice concern are located in the South, especially in proximity to rural and marginalized communities. Surface and groundwater quality are of those concerns with the prominence of agriculture industry. I foresee that, given that context, there will be a higher rate of chemical seepage into surface water from facilities within the South. 
+
+To add the background context of the proportion of water contamination within the scope of all contamination, I will look at a difference of means for the total quantities of the chemicals released to the air, water, and land. 
+
+```{r 1.c}
+
+# By hand means 
+
+group_means = new_waste %>% 
+  group_by(South) %>% 
+  summarize(
+    `Water`           = mean(water),
+    `Total Release (Thousands of Pounds)`    = mean(total_thousand_pounds),
+    `% of sample`     = 100 * n() / nrow(new_waste)
+  )
+group_means
+
+# Difference in Means 
+
+by_hand = group_means %>% 
+  select(-`% of sample`) %>% 
+  pivot_longer(-South, names_to = "Outcome", values_to = "mean") %>%
+  pivot_wider(names_from = South, values_from = mean) %>%
+  mutate(Difference = `1` - `0`)   # South minus Non-South
+
+# Standard Error 
+
+n_S  = sum(new_waste$South == 1)
+n_NS = sum(new_waste$South == 0)
+
+by_hand_se = by_hand %>% 
+  mutate(
+    SE = sqrt(`1` * (1 - `1`) / n_S +
+              `0` * (1 - `0`) / n_NS),
+    z  = Difference / SE
+  )
+by_hand_se
 
 
-## Question 2 
+```
+We can see that there is a higher average of total chemical release in thousands of pounds is higher in facilities that are not located in the South, which makes sense given the higher amount of states that are observed in that category. However, against the background of total releases, there appears to be a higher proportion of surface water contamination by facilities in Southern states as they have a higher average of contamination in comparison to facilities in non-southern states. 
 
-```{r}
+Difference: 0.0554 => 5%
+```{r 1.d}
 
-rebel_leader = rebel_leader %>% 
-  filter(
-    !is.na(dead) ,
-    !is.na(death_cause),
-    !is.na(birth_year), 
-    !is.na(western), 
-    !is.na(train_abroad))
+# Classical linear model theory 
+
+mod_water = lm(water ~ South + transfer_thousand_pounds + total_thousand_pounds, 
+               data = new_waste)
+
+modelsummary(mod_water,
+  title = "Outcome: Chemical Release Within Surface Water ",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "South"  = "South",
+    "transfer_thousand_pounds" = "Total Transfers",
+    "total_thousand_pounds" = "Total Waste"
+  )
+)
+
+# Logit model
+
+mod_water_logit = glm(water ~ South + transfer_thousand_pounds + total_thousand_pounds, data = new_waste, family = binomial())
+
+modelsummary(mod_water_logit,
+  title = "Outcome: Chemical Release Within Surface Water ",
+  stars = TRUE,
+  gof_omit = "IC|Log|Adj|F|RMSE",
+  coef_rename = c(
+    "(Intercept)" = "Intercept",
+    "South"  = "South",
+    "transfer_thousand_pounds" = "Total Transfers",
+    "total_thousand_pounds" = "Total Waste"
+  )
+)
+
+exp(coef(mod_water_logit)["South"])
+
+```
+Within the linear model, the coefficient for the South matches the difference in means displaying that when a facilities is located in the South, their likelihood for surface water contamination increases by 5.5 percentage points. 
+
+According to the logit model, facilities in southern states have ~1.6x the odds of having surface water contamination. In essence, facilities in the South have 1.6% more incidents of surface water contamination than those not in the South.
+
+```{r 1.e}
+
+scenarios = 
+  crossing(South = c(1, 0), 
+  transfer_thousand_pounds = mean(new_waste$transfer_thousand_pounds, na.rm = TRUE),
+  total_thousand_pounds = mean(new_waste$total_thousand_pounds, na.rm = TRUE))
+
+augment(mod_water_logit, newdata = scenarios, type.predict = "response") %>% 
+  select(South, `Pr(water)` = .fitted)
+
+0.162 - 0.106
 
 
 
 ```
+The probability of surface water contamination by facilities located in the South (16%) vs not in the South (11%) reflects the group means we calculated earlier. The effect of surface water contamination by facilities given their placement in the South is approximately 0.056, matching the group mean difference. 
+
+```{r 1.f}
+
+me_water = comparisons(
+  mod_water, variables = "South", 
+  newdata = datagrid(transfer_thousand_pounds = seq(0 , 7000000, by = 2000)))
+me_water
+
+ggplot(me_water, aes(x = transfer_thousand_pounds, y = estimate)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, fill = "#B8611A") +
+  ylim(0.03, 0.07) +
+  geom_line(color = "#B8611A", linewidth = 1.3) +
+  labs(x = "Total Transfers", y = "ME of Southern facilities on Pr(SW contamination)")
+  
+  
+  
+```
+Well. So this control does not vary the effect of facilities being in the South on the amount of surface water contamination they produce. I guess there is no meaningful interaction between South and waste that is transferred and the effect is linear across all amounts of transfer.  
 
 
+```{r 1.g}
 
-# Question 3 
+marginaleffects::comparisons(model = mod_water_logit, variables = "South") %>% 
+  head()
+
+avg_comparisons(mod_water_logit, variables = "South")
+
+```
+The average marginal effect of facilities located in South on surface water contamination is the same as my logit model's coefficient on my treatment. This makes sense as AME averages over all effects on my treatment and the logit coefficient measures the linear approximation of the treatment variable. Both are calculating group averages in essence. 
+
+## Question 2
 
 ```{r}
 
-affairs_clean = affairs |>
-  mutate(had_affair = as.numeric(n_affairs > 0)) |>
+view(rebel_leader)
+
+clean_leader = rebel_leader %>% 
+  filter(
+    !is.na(dead),
+    !is.na(dead == 1 & !is.na(death_cause))) %>% #Drops unusable data
+  mutate(killed = case_when(dead == 1 & death_cause %in% c(
+                                                  "KIA", 
+                                                  "Assassinated by government",
+                                                  "Assassinated by rival group",
+                                                  "Assassinated by external state",
+                                                  "Executed") ~ 1,
+                            TRUE ~ 0)) %>% # Creates binary variable for killed  
+  # Drop missing variables for predictors 
+  drop_na(birth_year, western, train_abroad)
+  
+
+```
+
+```{r 2.a}
+
+leader_mod = lm(killed ~ birth_year + western + train_abroad, data = clean_leader)
+tidy(leader_mod)
+
+leader_robust = lm_robust(killed ~ birth_year + western + train_abroad, data = clean_leader)
+tidy(leader_robust)
+
+
+
+```
+The standard errors in the classical model: 
+Birth year - ~0.002
+Western - ~0.068
+Train Abroad - ~0.065
+
+The standard errors in the robust model: 
+Birth year - ~0.002
+Western - ~0.065
+Train Abroad - ~0.066
+
+Within both models, the respective standard errors seem very close to one another. 
+
+```{r 2.b}
+
+birth_yr = 100 * (0.002 - 0.002)/0.002
+western = 100 * (0.065 - 0.068)/0.068
+train_abroad = 100 * (0.066 - 0.065)/0.065
+
+birth_yr
+western
+train_abroad
+
+```
+The SE for birth year is the same for both the robust and classical model. The SE for being educated in the West is ~4 percentage points smaller for the robust model in comparison to the classical model. The SE for being trained abroad is systematically bigger by ~2 percentage points in the robust model in comparison to the classical model.
+
+```{r 2.c}
+library(sandwich)
+
+simulation = function() {
+  n = 30
+  x = runif(n, 0, 10)
+  eps = rnorm(n, 0, 1)
+  y = 2 + 0.5 * x + eps
+  
+  model = lm(y ~ x)
+  beta_hat = coef(model)["x"]
+  
+  # Classic SE
+  se_classic = summary(model)$coefficients["x", "Std. Error"]
+  
+  # Robust SE (HC2); take the square root of the variance 
+  se_robust = sqrt(vcovHC(model, type = "HC2")["x", "x"])
+  
+  tibble(
+    beta_hat = beta_hat,
+    se_classic = se_classic,
+    se_robust = se_robust)
+}
+
+# Run 2000 simulations
+results = map_dfr(1:2000, ~simulation())
+
+```
+
+```{r 2.d}
+
+# Confidence intervals 
+
+results = results %>%
+  mutate(
+    # Classic CI
+    ci_low_classic  = beta_hat - 1.96 * se_classic,
+    ci_high_classic = beta_hat + 1.96 * se_classic,
+    
+    # Robust CI
+    ci_low_robust  = beta_hat - 1.96 * se_robust,
+    ci_high_robust = beta_hat + 1.96 * se_robust,
+    
+    # Coverage indicators
+    cover_classic = (ci_low_classic <= 0.5 & ci_high_classic >= 0.5),
+    cover_robust  = (ci_low_robust  <= 0.5 & ci_high_robust  >= 0.5)
+  )
+
+```
+
+```{r 2.e}
+
+results %>%
+  summarize(
+    coverage_classic = mean(cover_classic),
+    coverage_robust  = mean(cover_robust)
+  )
+
+```
+While the coverage indicator for the classic lm model is below 95%, the robust indicator is slightly smaller. This confirms that robust model standard errors under measure the model when there is a small n even when there is homoskedasticity. The classic SE provides a more accurate amount of coverage in smaller samples, accounting for all values.
+
+# Question 3
+
+```{r 3.a}
+
+affairs_clean = affairs %>% 
+  mutate(had_affair = as.numeric(n_affairs > 0)) %>% 
   select(had_affair, kids, years_married)
 
+classic_affairs = lm(had_affair ~ kids, data = affairs_clean)
+tidy(classic_affairs)
+
+```
+The standard error for kids alone is ~0.039 which is very low. This suggests strength in the model for measuring our treatment on our outcome. 
+
+```{r 3.b}
+# Extract residual variance/Numerator 
+
+augment = augment(classic_affairs) %>% 
+  summarize(SSR    = sum(.resid^2),
+            df     = n() - 2,
+            sigma2 = SSR / df)
+
+# Denominator of equation 
+
+SS = sum((affairs_clean$kids - mean(affairs_clean$kids))^2)
+
+SE = sqrt(augment$sigma2 / SS)
+
+print(SE)
+
+
+```
+The by hand standard error matches the one found within the model. 
+
+What happens to the standard error of kids when controlling for years married? 
+
+```{r 3.c}
+
+more_affairs = lm(had_affair ~ kids + years_married, data = affairs_clean)
+tidy(more_affairs)
+
 ```
 
+The standard error for kids increased to ~0.047 which implies that there is a strong interaction taking place when adding the control to our model. 
+
+```{r 3.d}
+
+# Numerator 
+more_augment = augment(more_affairs) %>% 
+  summarize(SSR    = sum(.resid^2),
+            df     = n() - 3,
+            sigma2 = SSR / df)
+
+# Auxiliary Regression
+
+kids_aux = lm(kids ~ years_married, data = affairs_clean)
+summary(kids_aux)
+
+# Denominator 
+SS_kids = sum((resid(kids_aux))^2)
+
+# Denominator of equation 
+
+SE_kids = sqrt(more_augment$sigma2 / SS_kids)
+
+print(SE_kids)
+
+```
+
+For the numerator, we need to subtract from 3 rather than 2 to hold for the added control in our degrees of freedom. The auxiliary regression yields the information for the denominator in the formula. To calculate the standard error before, we needed to divide the residual variance by the sum of squared deviations of kids around the mean of kids in the data. By adding our control, our formula will now display the variation in kids on affairs after removing the effect of years married on that treatment. 
+
+The squared residual from the first model to now has decreased noting that, with the added control variable, the model is fitting the data more closely than before. This is also present in the adjusted R-squared value increasing from ~0.016 to ~0.21 respectively.
+
+Both the by hand standard error and model standard error are the same. When controlling for years married, both values increased from the initial model without our control variable. This corroborates the idea that year married has a strong interaction with having kids on having an affair. 
