@@ -1,0 +1,491 @@
+---
+title: "Problem Set #4"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(purrr)
+library(broom)
+library(modelsummary)
+library(marginaleffects)
+library(MASS, exclude = "select")
+library(pscl)
+library(estimatr)
+library(juanr)
+```
+
+# Question 1
+
+## 1.a
+
+```{r}
+# Create binary variable 
+
+newfearon = fearon %>% 
+  filter(!is.na(numlang), !is.na(polity2), !is.na(pop)) %>% 
+  mutate(any_onset = case_when(onset > 0 ~ 1 ,
+                               TRUE ~ 0)) %>% 
+  mutate(log_pop = log(pop))
+
+base_rate = mean(newfearon$any_onset)
+base_rate
+
+
+```
+
+Base rate of a new conflict is 2%. This is the fraction of civil war onset.
+
+## 1.b
+
+Regression model:
+
+$Pr (any\_ onset) = logit\ ^{-1}(\beta {0} + \beta {1}\ numlang + \beta {2} \ polity + \beta {3}\ log(pop))$
+
+```{r}
+
+onset_mod = glm(any_onset ~ numlang + polity2 + log_pop,
+             data = newfearon,
+             family = binomial(link = "logit"))
+
+modelsummary(onset_mod)
+
+```
+
+The coefficients are in log-odds, so we are unable to interpret them by themselves.
+
+## 1.c
+
+Show how probability changes with `numlang`, holding other variables fixed.
+
+```{r}
+
+scenario = 
+  crossing(
+    numlang = seq(min(newfearon$numlang), 
+                  max(newfearon$numlang), length.out = 100),
+           
+     polity2 = mean(newfearon$polity2),
+     log_pop = mean(newfearon$log_pop))
+
+preds = predictions(onset_mod, newdata = scenario, se_fit = TRUE,
+                interval = "response")
+preds
+
+# Lack of upper and lower bounds 
+
+ggplot(preds, aes(x = numlang, y = estimate)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  labs(y = "Pr(any_onset = 1)", x = "Number of Languages")
+
+
+
+```
+
+The curve bends upwards as the number of languages in a country increases. This curved graph almost holds a linear shape. This must represent the small rate of change in probabilities of civil war onset with increases in numbers of languages.
+
+## 1.d
+
+The AME is looking at the rate of change in probability per one language. So: “How much does probability change when `numlang` increases by 1?”
+
+```{r}
+
+ame = avg_slopes(onset_mod, variables = "numlang")
+ame
+
+
+```
+
+One percentage point increase in `numlang` is associated with about a 0.00053 probability of more conflicts.
+
+## 1.e
+
+When looking at 10 more languages, \~0.0005 x 10 = 0.0054 percentage points of conflict onset. So on are larger rate, about 5.4 percentage increase in conflict onset in 1000 more languages.
+
+We compare to the base rate to get the relative change, \~0.005/ \~0.017 will give the percentage of relative increase. The percentage of relative increase is about 30%.
+
+## 1.f
+
+A one-unit increase in linguistic diversity is associated with a 30% percentage-point change in the probability of civil war onset.
+
+# Question 2
+
+## 2.a
+
+Pulling coefficients from the first model.
+
+```{r}
+coefs = coef(onset_mod)
+
+b0 = coefs["(Intercept)"]
+b_numlang_mle = coefs["numlang"]
+b_polity = coefs["polity2"]
+b_logpop = coefs["log_pop"]
+
+
+```
+
+## 2.b
+
+```{r}
+# Log likelihood function 
+
+log_lik = function(b_numlang){
+  
+  # linear predictor
+  eta = b0 +
+         b_numlang * newfearon$numlang +
+         b_polity * newfearon$polity2 +
+         b_logpop * newfearon$log_pop
+  
+  # predicted probabilities
+  p = 1 / (1 + exp(-eta))
+  
+  # log-likelihood
+  loglike = sum(newfearon$any_onset * log(p) + 
+            (1 - newfearon$any_onset) * log(1 - p))
+  
+  return(loglike)
+}
+
+log_lik(b_numlang_mle)
+logLik(onset_mod)
+
+```
+
+## 2.c
+
+```{r}
+
+grid = seq(b_numlang_mle - 0.5,
+            b_numlang_mle + 0.5,
+            length.out = 200)
+
+loglike_values = map_dbl(grid, log_lik)
+
+nf_loglike = data.frame(
+  b_numlang = grid,
+  loglik = loglike_values
+)
+
+grid
+
+```
+
+## 2.d
+
+```{r}
+
+ggplot(nf_loglike, aes(x = b_numlang, y = loglik)) +
+  geom_line() +
+  geom_vline(xintercept = b_numlang_mle, linetype = "dashed") +
+  labs(x = "beta_numlang", y = "Log-Likelihood")
+
+
+
+```
+
+The MLE is the value of $\beta_{\text{numlang}}$ that makes the observed pattern of 0s and 1s most probable. The log-likelihood peaks at the MLE because this is the value of the coefficient that makes the observed outcomes most consistent with the model’s predicted probabilities. Moving away from this value reduces the likelihood because the model’s predictions become less aligned with the observed data.
+
+# Question 3
+
+## 3.a
+
+Two values to the left of the MLE: one close to b_numlang_mle, one far to the left
+
+Two values to the right of the MLE: one close, one far to the right
+
+```{r}
+
+b_close_left  = b_numlang_mle - 0.05
+b_far_left    = b_numlang_mle - 0.3
+
+b_close_right = b_numlang_mle + 0.05
+b_far_right   = b_numlang_mle + 0.3
+
+```
+
+```{r}
+#Compute the slopes 
+epsilon = 0.0001
+
+compute_slope = function(b0) {
+  log_0 = log_lik(b0)
+  log_1 = log_lik(b0 + epsilon)
+  
+  slope = (log_1 - log_0) / epsilon
+  
+  return(data.frame(
+    beta = b0,
+    log_beta = log_0,
+    log_beta_plus_eps = log_1,
+    slope = slope
+  ))
+}
+```
+
+```{r}
+results = rbind(
+  compute_slope(b_far_left),
+  compute_slope(b_close_left),
+  compute_slope(b_close_right),
+  compute_slope(b_far_right)
+)
+
+results
+```
+
+Far left: 1021.7126
+Close left: 615.8022
+Close right: -1951.5321
+Far right: -20829.1444
+
+## 3.b
+
+When the slope is positive, the algorithm would step to the right; when negative, it would step to the left. The slopes to the left of the MLE are positive and those to the right are negative, correctly pointing toward the MLE.
+
+## 3.c
+
+The slope is largest far from the MLE and smallest near it. This is because the log-likelihood curve is steep far away from the peak and flat near the maximum. An algorithm should will large steps when the slope is large and small steps when the slope is small. 
+
+## 3.d
+
+Understanding the Hessian: how fast the curve is moving.
+
+```{r}
+# Expand the previous function to include Hessian
+
+epsilon = 0.0001
+
+compute_all = function(b0) {
+  
+  log_0 = log_lik(b0)
+  log_1 = log_lik(b0 + epsilon)
+  log_2 = log_lik(b0 + 2 * epsilon)
+  
+  slope1 = (log_1 - log_0) / epsilon
+  slope2 = (log_2 - log_1) / epsilon
+  
+  hessian = (slope2 - slope1) / epsilon
+  
+  return(data.frame(
+    beta = b0,
+    log_beta = log_0,
+    slope = slope1,
+    hessian = hessian
+  ))
+}
+
+# Apply the four points 
+
+results_hessian = rbind(
+  compute_all(b_far_left),
+  compute_all(b_close_left),
+  compute_all(b_close_right),
+  compute_all(b_far_right)
+)
+
+results_hessian
+
+```
+
+All the values of the hessian are negative (concave curve). Its absolute value is largest near the MLE, where the curve is most sharply curved, and smaller farther away where the curve flattens. This means curvature is strongest near the peak and weaker in the tails.
+
+# Question 4
+
+## 4.a
+
+```{r}
+set.seed(123)
+
+n_small  = 100
+n_medium = 500
+n_full   = nrow(newfearon)
+
+onset_small  = newfearon %>% slice_sample(n = n_small)
+onset_medium = newfearon %>% slice_sample(n = n_medium)
+onset_full   = newfearon
+
+
+```
+
+## 4.b
+
+Fit the model for the respective MLE's. 
+
+```{r}
+
+fit_model = function(newfearon) {
+  glm(any_onset ~ numlang + polity2 + log_pop,
+      data = newfearon,
+      family = binomial)
+}
+
+mod_small  = fit_model(onset_small)
+mod_medium = fit_model(onset_medium)
+mod_full   = fit_model(onset_full)
+
+b_numlang_mle_small = coef(mod_small)["numlang"]
+b_numlang_mle_medium = coef(mod_medium)["numlang"]
+b_numlang_mle_full = coef(mod_full)["numlang"]
+
+
+b_numlang_mle_small 
+b_numlang_mle_medium 
+b_numlang_mle_full 
+
+```
+
+Create a log-likelihood function for each model. 
+
+```{r}
+
+loglike = function(onset_mod, newfearon) {
+  
+  coefs = coef(onset_mod)
+  
+  b0 = coefs["(Intercept)"]
+  b_polity = coefs["polity2"]
+  b_logpop = coefs["log_pop"]
+  
+  function(b_numlang) {
+    
+    eta = b0 +
+      b_numlang * newfearon$numlang +
+      b_polity * newfearon$polity2 +
+      b_logpop * newfearon$log_pop
+    
+    p = 1 / (1 + exp(-eta))
+    
+    sum(newfearon$any_onset * log(p) +
+          (1 - newfearon$any_onset) * log(1 - p))
+  }
+}
+
+log_small  = loglike(mod_small, onset_small)
+log_medium = loglike(mod_medium, onset_medium)
+log_full   = loglike(mod_full, onset_full)
+
+```
+
+New grid for each model. 
+
+```{r}
+# Small sample 
+small_grid = tibble(
+  b_numlang = seq(b_numlang_mle_small - 0.5,
+                 b_numlang_mle_small + 0.5,
+            length.out = 200)) %>% 
+  mutate(loglike_values = map_dbl(b_numlang, log_lik))
+
+small_grid
+
+# Medium sample 
+
+med_grid = tibble(
+  b_numlang = seq(b_numlang_mle_medium - 0.5,
+                  b_numlang_mle_medium + 0.5,
+            length.out = 200)) %>% 
+  mutate(loglike_values = map_dbl(b_numlang, log_lik))
+
+med_grid
+
+# Full sample/data 
+
+full_grid = tibble(
+  b_numlang = seq(b_numlang_mle_full - 0.5,
+                  b_numlang_mle_full + 0.5,
+            length.out = 200)) %>% 
+  mutate(loglike_values = map_dbl(b_numlang, log_lik))
+
+full_grid
+
+```
+
+## 4.c 
+
+Plotting log-likelihoods. We have to standardize the log likelihoods 
+
+```{r}
+
+small_grid = small_grid %>% 
+  mutate(loglike_std = loglike_values - max(loglike_values))
+med_grid = med_grid %>% 
+  mutate(loglike_std = loglike_values - max(loglike_values))
+full_grid = full_grid %>% 
+  mutate(loglike_std = loglike_values - max(loglike_values))
+
+ggplot() +
+geom_line(data = small_grid, aes(x = b_numlang, y = loglike_std, color = "n = 100")) +
+geom_line(data = med_grid, aes(x = b_numlang, y = loglike_std, color = "n = 500")) +
+geom_line(data = full_grid, aes(x = b_numlang, y = loglike_std, color = "n = 6382"))
+
+
+```
+
+## 4.d
+
+The curves are so similar that they overlap given the similar values in each grid. Every n seems to display the same relationship between the beta coefficient for number of languages and the standardized log likelihood of onset conflict. 
+
+
+# Question 5
+
+##5.a
+
+```{r}
+# 3 different models 
+
+robustaffairs = lm_robust(n_affairs ~ marriage_rating + occup + relig + years_married, data = affairs, se_type = "HC2")
+
+pois_affairs = glm(n_affairs ~ marriage_rating + occup + relig + years_married, family = poisson, data = affairs)
+
+bi_affairs = glm.nb(n_affairs ~ marriage_rating + occup + relig + years_married, data = affairs)
+
+msummary(list("Robust" = robustaffairs, 
+              "Poisson" = pois_affairs, 
+              "Negative Binomial" = bi_affairs), 
+         stars = TRUE,
+         statistic = 'std.error')
+
+                   
+                  
+
+```
+
+
+The signs seem to agree for all coefficients across the three models. The standard errors for the poisson model seem to be significantly smaller than those of the robust and binomial models. The poisson model fits the data best given that it has the smaller errors. 
+
+## 5.b 
+
+```{r}
+
+scenario = crossing(
+  marriage_rating = seq(min(affairs$marriage_rating),
+                      max(affairs$marriage_rating), length.out = 100),
+  occup = mean(affairs$occup),
+  relig = mean(affairs$relig), 
+  years_married = mean(affairs$years_married))
+
+pred_lm = predictions(robustaffairs, newdata = scenario, type = "response")
+pred_pois = predictions(pois_affairs, newdata = scenario, type = "response")
+pred_nb = predictions(bi_affairs, newdata = scenario, type = "response")
+
+
+pred_lm$model = "Robust"
+pred_pois$model = "Poisson"
+pred_nb$model = "Negative Binomial"
+
+pred_all = bind_rows(pred_lm, pred_pois, pred_nb)
+
+ggplot(pred_all, aes(x = marriage_rating, y = estimate, 
+                     color = model, fill = model)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) +
+  labs(y = "Predicted Estimate", x = "Marriage Rating")
+```
+
+## 5.c
+
+While the lines are display a negative relationship between estimated number of affairs are marriage rating increases, both the poisson and binomial model deviate away from the robust line. Around the middle ratings there is an almost identical curvature in the way poisson and binomial line bend. This shows how these models fit data a little more precisely even though the robust model is displaying the same relationship. 
