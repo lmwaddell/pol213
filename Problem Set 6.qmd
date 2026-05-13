@@ -1,0 +1,350 @@
+---
+title: "Problem Set #6"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(broom)
+library(modelsummary)
+library(marginaleffects)
+library(survival)
+library(survminer) 
+library(pscl)
+library(VGAM)  
+library(juanr)
+```
+
+# Question 1
+
+## 1.a
+
+The two stage process implies two different situations: Someone who steps out into an affair for the first time (0 to 1) implies an event that pushes them to that point. Someone who increases the amount of affairs they have implies factors that differ within that person.
+
+## 1.b - Hurdle 
+
+```{r}
+# binary variable for affairs 
+
+new_affairs = affairs %>% 
+  mutate(any_affair = ifelse(n_affairs > 0, 1, 0))
+
+mod_stage1 = glm(any_affair ~ marriage_rating + age + kids + years_married, data = new_affairs, family = binomial())
+
+modelsummary(mod_stage1, stars = TRUE,
+         statistic = 'std.error')
+
+```
+
+We cannot interpret these log-odds; however, based on the sign of the marriage rating, we can think that an increase in marriage rating decreases the odds of having an affair.
+
+
+```{r}
+scenario1 = crossing(
+  marriage_rating = 1:5,
+  
+  age = mean(new_affairs$age, na.rm = TRUE),
+  kids = mean(new_affairs$kids, na.rm = TRUE),
+  years_married = mean(new_affairs$years_married, na.rm = TRUE)
+)
+
+scenario1 = scenario1 %>% 
+  mutate(preds1 = predict(mod_stage1, 
+                 newdata = scenario1, 
+                 type = "response"))
+
+ggplot(scenario1, aes(x = marriage_rating, y = preds1)) +
+  geom_line() +
+  geom_point() +
+  labs(y = "Pr(any_affair = 1)", x = "Marriage Rating")
+
+
+```
+
+My intuition from before is seen here with the increase in marriage rating leading to a decrease in the probability of having an affair. This represents the outcome of going from no affair to one affair. This is stage 1.
+
+## 1.c - Count Model
+
+The second stage is interested in those who continue to cross the line and how many affairs they have.
+
+```{r}
+
+yes_affairs = affairs %>%
+  filter(n_affairs > 0, na.rm = TRUE)
+
+mod_stage2 = vglm(n_affairs ~ marriage_rating + age + kids + years_married, data = yes_affairs, family = pospoisson())
+
+modelsummary(mod_stage2, stars = TRUE,
+         statistic = 'std.error')
+
+```
+
+Here the marriage rating is still negative, implying that those who rate their marriage higher will have **fewer** affairs.
+
+```{r}
+scenario2 = crossing(
+  marriage_rating = c(1:5),
+  
+  age = mean(yes_affairs$age, na.rm = TRUE),
+  kids = mean(yes_affairs$kids, na.rm = TRUE),
+  years_married = mean(yes_affairs$years_married, na.rm = TRUE)
+)
+
+
+scenario2 = scenario2 %>% 
+  mutate(preds2 = predict(mod_stage2, 
+                 newdata = scenario2, 
+                 type = "response"))
+
+ggplot(scenario2, aes(x = marriage_rating, y = preds2)) +
+  geom_line() +
+  geom_point() +
+  labs(y = "Pr(any_affair = 1)", x = "Marriage Rating")
+
+
+```
+
+So among those who cheat already, once again, a higher rating of marriage satisfaction leads to a lower amount of affairs. 
+
+## 1.d 
+
+Our hurdle model combines both pieces of these assumptions into one model. 
+
+```{r}
+
+mod_full = hurdle(
+  n_affairs ~ marriage_rating + age + kids + years_married |
+    marriage_rating + age + kids + years_married,
+  data = new_affairs,
+  dist = "poisson"
+)
+
+modelsummary(mod_full, stars = TRUE,
+         statistic = 'std.error')
+
+```
+The coefficients for both the count and hurdle models do match the previous steps from before. 
+
+## 1.e 
+
+The hurdle model estimates the probability of any affairs and the count model estimates the probability of more affairs given you've cheated already. For both models, higher marriage satisfaction strongly decreases the probability of having any affair. Conditional on having at least one affair, higher marriage satisfaction also predicts fewer affairs. 
+
+# Question 2 
+
+## 2.a
+
+Here we are refitting the affairs data into a normal poisson model to display how poisson is flawed in capturing extreme overdispersion within out data. We will use the affairs data again. 
+
+```{r}
+
+mod_pois = glm(n_affairs ~ marriage_rating + age + kids + years_married, 
+               data = new_affairs, family = poisson)
+
+# Fitted Values and Residuals 
+mu_hat = fitted(mod_pois)
+
+pearson_terms = (new_affairs$n_affairs - mu_hat)^2 / mu_hat
+pearson_sum = sum(pearson_terms)
+
+# Get n and k to divide by residuals
+
+n = nobs(mod_pois)
+
+k = length(coef(mod_pois))
+
+phi = pearson_sum / (n-k)
+phi
+
+
+```
+
+## 2.b
+
+Poisson assumes that our conditional variance is similar or congruent to our conditional mean, despite the presence concentrated tails and zeros.
+This phi value of about 7.22 is much much larger than 1, which is indicative of how badly the Poisson model fails to capture how spread out our data is.
+
+## 2.c
+
+We will now refit this data into a negative binomial model which should yield a better fit that our poisson and compare that with the poisson model. 
+
+```{r}
+
+library(MASS)
+
+mod_nb = glm.nb(n_affairs ~ marriage_rating + age + kids + years_married, 
+               data = new_affairs)
+
+
+modelsummary(list("Poisson" = mod_pois, "NB" = mod_nb),
+             stars = TRUE,
+             gof_omit = "IC|Log|Adj|F|RMSE")
+
+```
+The standard errors in our negative binomial model are much larger than within the poisson model. This is understandable given that the negative binomial model handles overdispersion, or more plainly, more zeros and random higher counts better than the poisson model. 
+
+## 2.d 
+
+We still need to understand why there is overdispersion and a gap between the measure of overdispersion between the two models. That is where looking at the sum of zeros comes from. 
+
+```{r}
+
+observed_zeros = sum(new_affairs$n_affairs == 0)
+observed_zeros
+
+expected_zeros = sum(
+  dpois(0, lambda = fitted(mod_pois))
+)
+expected_zeros
+
+```
+
+An almost 251 point gap is very significant. Poisson measures a great deal fewer zeros than what is actually in the data which informs why the standard errors are much smaller and yet the phi value is so large. 
+
+# Question 3 
+
+When looking at right censored data, what does that do when we try to simulate the effects of our treatment on our outcomes? We can observe this here without running a simulation. 
+
+## 3.a 
+
+```{r}
+
+leaders = leader |>
+  group_by(country, leader) |>
+  summarise(
+    start_year = min(year),
+    end_year   = max(year),
+    duration   = max(yr_office),  # true spell length (1840–2015 view)
+    
+    rebel      = first(rebel, order_by = year),
+    .groups    = "drop") |>
+  drop_na(duration, rebel) |>
+  filter(start_year <= 1991) |>  # drop whose spell begins after the cutoff
+  mutate(
+    event         = as.integer(end_year < 2015), # event under the 2015 cutoff
+    duration_1991 = pmin(duration, 1991 - start_year + 1), # what we'd observe if data ended in 1991
+    event_1991    = as.integer(end_year <= 1991)  # 1 if exited by 1991, 0 if still in office
+  )
+
+nrow(leaders)
+sum(leaders$event == 0)
+sum(leaders$event_1991 == 0)              
+
+
+```
+
+In total, there are 2,068 leader spells reported in this data-set. Only 17 of them are reported at the 1991 cutoff vs the 194 at the 2015 cutoff. 
+
+## 3.b
+
+```{r}
+
+df_oracle = leaders %>%
+mutate(view = "Oracle", dur = duration)
+
+df_1991_clip = leaders %>%
+mutate(view = "Observed", dur = duration_1991) 
+
+df_dropped = leaders %>%
+filter(event_1991 == 1) %>%
+mutate(view = "Drop Censored", dur = duration)
+
+
+df_al1 = bind_rows(df_oracle, df_1991_clip, df_dropped)
+
+
+ggplot(df_al1, aes(x = dur, 
+                   fill = factor(rebel, 
+                                 labels = c("Non-Rebel", "Rebel")))) +
+  
+geom_histogram(binwidth = 2, position = "identity", alpha = 0.6) +
+facet_wrap(~ view, ncol = 1) +
+labs(x = "Spell Duration in Years", y = "Count", fill = "Rebel")
+
+
+
+```
+
+
+## 3.c
+
+```{r}
+
+m_oracle = lm(duration ~ rebel, data = leaders)    
+m_naive  = lm(duration_1991 ~ rebel, data = leaders)
+m_drop   = lm(duration ~ rebel, data = filter(leaders, event_1991 == 1))
+
+modelsummary(list("Oracle" = m_oracle, 
+                  "Naive" = m_naive, 
+                  "Drop" = m_drop),
+             stars = TRUE,
+             gof_omit = "IC|Log|Adj|F|RMSE")
+
+bind_rows(
+  tidy(m_oracle) %>% mutate(model = "Oracle"),
+  tidy(m_naive) %>% mutate(model = "Clip at 1991"),
+  tidy(m_drop) %>% mutate(model = "Drop censored")) %>%
+  filter(term == "rebel") 
+
+```
+Rebel Coefficients & Estimates: 
+Oracle Model - 1.591
+Naive Model - 1.208
+Drop Model - 1.398
+
+The oracle estimate shows the "truth" while the clipped naive estimate assumes that rebel leaders' terms get clipped artificially due to the fact that they are censored. This does match the simulation within the lecture that shows how censorship pushes the estimates closer to 0. 
+
+## 3.d 
+
+The bias is coming from the right tail of the duration distribution — the very long-serving leaders whose tenures are still ongoing at the 1991 cutoff.
+In the Oracle histogram, you can see a small number of leaders with very long spells. Once you move to the “Observed” and the “Drop Censored” views, that upper tail gets compressed or removed.
+
+OLS assumes outcomes are fully observed but censored observations are only partially observed. We know that leaders lasted at least til a certain time, not exactly how long. Survival-analysis machinery accounts for this discrepancy. 
+
+# Question 4 
+
+## 4.a
+
+```{r}
+library(carData)
+
+Rossi = carData::Rossi
+
+km_fin = survfit(Surv(week, arrest) ~ fin, data = Rossi)
+
+ggsurvplot(km_fin, data = Rossi, conf.int = TRUE, 
+           legend.labs = c("No Aid", 
+                          "Financial Aid"), 
+           xlab = "Weeks til re-arrest",
+           ylab = "Probability")
+
+
+```
+The presence of financial upon release from state prison increases the likelihood of avoiding re-arrest or at least extending the time until rearrest in comparison to those who do not receive financial aid.  
+
+## 4.b
+
+```{r}
+
+mod_exp = survreg(Surv(week, arrest) ~ 
+                    fin + age + wexp + mar + paro + prio,
+          data = Rossi, dist = "exponential")
+
+mod_wb = survreg(Surv(week, arrest) ~ 
+                    fin + age + wexp + mar + paro + prio,
+          data = Rossi, dist = "weibull")
+
+mod_cox = coxph(Surv(week, arrest) ~ 
+                    fin + age + wexp + mar + paro + prio,
+          data = Rossi)
+
+modelsummary(list("Exponential" = mod_exp, "Weibull" = mod_wb, "Cox" = mod_cox),
+             stars = TRUE, gof_omit = "IC|Log|Adj|F|RMSE",
+             coef_omit = "Log\\(scale\\)")
+
+```
+
+## 4.c
+
+The signs of the fin variable are positive on both exponentiated models but not on our Cox model that measures in log hazards. So according to our exponential and weibull model, the presence of financial assistance after release implies a longer likelihood of staying out as the weeks go on. Our negative Cox coefficient implies a similar idea just in different terms. There is about a 36% percent lower hazard of being re-arrested when given financial assistance. 
+
